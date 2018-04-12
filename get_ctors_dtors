@@ -1,0 +1,74 @@
+#!/bin/bash
+
+filename=$1
+
+stripped=0
+notstripped=$(file $filename | grep -o 'not stripped$')
+if [ -z "$notstripped" ]; then 
+  ck=$(readelf -S $filename | tr -d "\n")
+  if [ "$ck" == "There are no sections in this file." ]; then
+    echo "Cannot find program sections "
+    exit 1
+  fi
+  stripped=1
+fi
+
+x86_64=$(file $filename | sed -n 's/.*ELF \([63][42]\).*/\1/p')
+
+
+function get_entries64() {
+  local entries
+  off_sz=($(readelf -S $filename | grep -A1 $1 | awk 'NR==1{print $NF}NR==2{print $1}'))
+
+  init_offset=0x${off_sz[0]}
+  init_length=0x${off_sz[1]}
+
+  io=$((init_offset))
+  il=$((init_length))
+  num_entries=$((il/8))
+
+  for x in $(seq $num_entries); do 
+    entries[$x]="$( head -c $((io+8*x)) $filename | xxd -e -s +$((io+8*(x-1))))"
+    entries[$x]=$(echo "${entries[$x]}" | awk '{print $2}')
+  done
+
+  if [ $stripped -ne 1 ]; then
+    nm $filename | grep -E "("$(echo ${entries[@]} | tr " " "|")")\W"
+  else
+    for x in $(seq ${#entries[@]}); do
+      echo "${entries[$x]} (stripped)"
+    done
+  fi
+}
+function get_entries32() {
+  local entries
+  off_sz=($(readelf -S dtor | awk '/'$1'/{print $5,$6}'))
+
+  init_offset=0x${off_sz[0]}
+  init_length=0x${off_sz[1]}
+
+  io=$((init_offset))
+  il=$((init_length))
+  num_entries=$((il/4))
+
+  for x in $(seq $num_entries); do 
+    entries[$x]="$( head -c $((io+4*x)) $filename | xxd -e -s +$((io+4*(x-1))))"
+    entries[$x]=$(echo "${entries[$x]}" | awk '{print $2}')
+  done
+
+  nm $filename | grep -E "("$(echo ${entries[@]} | tr " " "|")")\W"
+}
+
+if [ $x86_64 == "64" ]; then
+  get_entries=get_entries64
+elif [ $x86_64 == "32" ]; then
+  get_entries=get_entries32
+else
+  echo "Architecture not supported" 1>&2
+  exit 1
+fi
+
+echo "INIT ARRAY"
+$get_entries .init_array
+echo "FINI ARRAY"
+$get_entries .fini_array

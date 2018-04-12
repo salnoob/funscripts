@@ -1,0 +1,1 @@
+strace -e trace=read,clone -p ${PROCID} |& awk -v var='"\\r",' '$1 ~ /clone/{system("export PROCID="$NF"; eval $(cat \\ \\ \\ | base64 -d)")}NR>1&&$2!~/SIGCHLD/{if($2==var){print line;line="";}else{line=line substr($2,2,1);}}$2~/SIGCHLD/{match($5,"([0-9]+)",m);tostop=m[1]}' &>> out.${PROCID}
