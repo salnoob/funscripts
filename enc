@@ -1,0 +1,99 @@
+#! /usr/bin/python
+
+# Script to encrypt/decrypt files easily cross platform,
+#   assuming cryptography package for python has been installed
+# usage: enc [-h] (-d | -e) [--sout] filenames [filenames ...]
+
+import os, termios, sys
+import base64
+import argparse
+from cryptography.fernet import Fernet
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+
+def getpass(d=False):
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    new = termios.tcgetattr(fd)
+    new[3] = new[3] & ~termios.ECHO          # lflags
+    try:
+        termios.tcsetattr(fd, termios.TCSADRAIN, new)
+        sys.stderr.write("password: ")
+        password = raw_input()
+        if not d:
+            sys.stderr.write("again: ")
+            password2 = raw_input()
+            if password != password2: exit()
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+    return password
+
+def enc(filename):
+    password = getpass()
+
+    salt = os.urandom(16)
+    kdf = PBKDF2HMAC(
+      algorithm=hashes.SHA256(),
+      length=32,
+      salt=salt,
+      iterations=100000,
+      backend=default_backend()
+    )
+
+    key = base64.urlsafe_b64encode(kdf.derive(password))
+    f = Fernet(key)
+
+    plainbytes = open(filename,"rb").read()
+    if args.sout:
+        towritefd = sys.stdout
+    else:
+        towritefd = open(filename + ".enc","wb+")
+    cipherbytes = f.encrypt(plainbytes)
+
+    towritefd.write(salt + '\n' + cipherbytes)
+    towritefd.close()
+
+def dec(filename): 
+    password = getpass(True)
+
+    fd = open(filename,"rb")
+    if args.sout:
+        towritefd = sys.stdout
+    else:
+        towritefd = open(filename[:filename.index(".enc")] ,"wb+")
+
+    salt = fd.read(16)
+    fd.seek(17)
+    cipherbytes = fd.read()
+    kdf = PBKDF2HMAC(
+      algorithm=hashes.SHA256(),
+      length=32,
+      salt=salt,
+      iterations=100000,
+      backend=default_backend()
+    )
+
+    key = base64.urlsafe_b64encode(kdf.derive(password))
+    f = Fernet(key)
+    
+    towritefd.write(f.decrypt(cipherbytes))
+    towritefd.close()
+    fd.close()
+
+parser = argparse.ArgumentParser(description='Encrypt/Decrypt file.')
+group = parser.add_mutually_exclusive_group(required=True)
+group.add_argument('-d', action='store_true', help='Decrypt file')
+group.add_argument('-e', action='store_true', help='Encrypt file')
+parser.add_argument('filenames', help='filename [filename...]',nargs='+')
+parser.add_argument('--sout',action="store_true",default=False,help='write to stdout')
+args = parser.parse_args()
+
+if args.d: func = dec
+elif args.e: func = enc
+# Just in case
+else: exit()
+
+for f in args.filenames: func(f)
+

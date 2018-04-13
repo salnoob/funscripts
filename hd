@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# Hide a commandline command input
+
+if [ "${DEBUG}" = "ON" ]; then
+ set -x
+fi
+
+stty -echo
+
+read cmd
+
+eval $cmd 2>/dev/null
+
+stty echo 

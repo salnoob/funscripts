@@ -1,0 +1,45 @@
+#!/bin/bash
+
+if [ "${DEBUG}" = "ON" ]; then
+ set -x
+fi
+
+# shred a file or recursively a directory
+# usage: shredeverything <file/directory>
+
+if [ $# -lt 1 ]; then
+  echo Not enough args
+  exit
+fi
+
+file=$1
+export IFS=","
+
+function shredit() {
+
+  local lfile="$1"
+
+  if [ -d "${lfile}" ]; then
+    
+    cd "${lfile}"
+    echo ">>>>>>>>" $(pwd)
+
+    for fil in $(ls -m); do
+      if [ -d "${fil## }" ]; then
+        shredit "${fil## }"
+        continue
+      fi
+
+      shred -z -u "${fil## }" 
+    done
+
+    cd .. 
+    rmdir "${lfile}"
+
+  else
+      shred -z -u "${lfile}"
+  fi
+
+}
+
+shredit ${file}

@@ -1,0 +1,131 @@
+#!/bin/bash 
+
+# Runs from pwd for right now
+# Create an encrypted checksum file recursively
+# starting at the current directory
+# OR
+# Check the encrypted checksum files recursively
+# starting at the current directory
+
+# nr means don't recurse
+# Usage ./shasumsrec <createsums|checksums> [nr]
+
+sumfile=".sha256sums.txt"
+# May want to change this to use a file...
+password='crazyPassword'
+# Administrators to be notified
+declare -a admins=(you me him her)
+
+if [ -z "${1}" ] 
+then
+  func=createsums
+else
+  func=${1}
+fi
+
+shift
+
+if [ -n "${1}" -a "${1}" == "nr" ] 
+then 
+  rec=0
+else 
+  rec=1
+fi
+
+function createsums () {
+  # Erase previous file
+  local ff
+  echo -n "" > ${sumfile}
+  echo "-- `pwd` --"
+
+  for f in `ls`
+  do
+    ff="${f}"
+    if [ -f ${ff} ]
+    then
+      sha256sum ${ff} >> ${sumfile}
+    elif [ -d ${ff} ] && (( ${rec} ))
+    then 
+      cd ${ff}
+      if [ -z "`ls`" ]
+      then 
+        cd -
+        continue
+      else
+        ${0} createsums 
+        cd -
+      fi
+    fi
+  done
+
+  encryptsumfile 
+}
+
+function checksums () {
+  decryptsumfile | sha256sum --quiet -c - &&\
+  alliswell ||\
+  somethingwrong "`pwd`/${sumfile}"
+
+  echo "-- `pwd` --"
+
+  for f in `ls`
+  do
+    if [ -d ${f} ] && (( ${rec} ))
+    then 
+      cd "${f}"
+      if [ $? -ne 0 ]; then 
+        continue 
+      fi
+      if [ -z "`ls`" ]
+      then 
+        cd -
+        continue
+      else
+        ${0} checksums 
+        cd -
+      fi
+    fi
+  done
+}
+
+function alliswell () {
+
+  # In case we want additional checking 
+  # ... 
+
+  echo "All is well"
+  return 0
+}
+
+function somethingwrong () {
+  local msg
+  msg="There is an inconsistency in"
+  msg="${msg} file:  $1"
+  alertadmins msg
+  return 1
+}
+
+function encryptsumfile () {
+  # In case this changes
+  local file=${sumfile}
+  #file="postgresql_docs.tgz"
+  gpg -q --batch --cipher-algo AES256 --passphrase ${password} -c ${file}
+  # Get rid of plain text file
+  shred -u ${file}
+}
+
+function decryptsumfile () {
+  # In case this changes
+  local file=${sumfile}
+  #file="postgresql_docs.tgz"
+  gpg -q --batch --passphrase ${password} -d ${file}.gpg
+}
+
+function alertadmins () {
+  for admin in ${admins[@]}
+  do 
+    echo "${msg}" | mailx ${admin}@localhost
+  done
+}
+
+${func}

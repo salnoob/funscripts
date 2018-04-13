@@ -1,0 +1,33 @@
+#!/usr/bin/bash
+
+# Set up a reverse tunnel based on value
+#  given in html comment
+#  of the form : <!--md5hash:port-->
+# Works well as a cronjob
+
+wheretotunnelfrom="somewhereoutthere"
+proxyopts="--proxy1.0 proxyaddr:proxyport" 
+keyword="keyword"
+wheretocheckfortunnel="http://example.com/example.html"
+
+md5=$(echo -n ${keyword} | md5sum | awk '{print $1}')
+port=$(curl -L -s ${proxyopts} ${wheretocheckfortunnel} |\
+sed -n "/${md5}/s/<!-- *${md5}:\([0-9]\+\) *-->/\1/p" )
+
+if [ -n "${port}" ]; then 
+  # port was found so set things up
+  line='ssh -Nf -R .* '
+  line+=${wheretotunnelfrom}
+  if pgrep -f "${line}"; then 
+    # Already running
+    exit
+  else
+    # Create tunnel
+    ssh -Nf -R ${port}:localhost:22 ${wheretotunnelfrom}
+  fi
+elif pgrep -f "${line}"; then
+  # no port specified and tunnel is up
+  # so tear it down
+  pkill -f "${line}" 
+fi
+
